@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pain Point Scanner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --reddit-orange:#FF4500;
+  --reddit-dark:#1A1A1B;
+  --reddit-border:#343536;
+  --reddit-text:#D7DADC;
+  --reddit-muted:#818384;
+  --reddit-green:#46D160;
+  --reddit-blue:#0079D3;
+}
+html,body{height:100%;overflow:hidden}
+body{width:400px;min-height:550px;background:#0e1113;color:#D7DADC;font-family:IBM Plex Sans,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;font-size:13px;line-height:1.4}
+.app{display:flex;flex-direction:column;height:100%}
+.header{background:#1A1A1B;padding:16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #343536;flex-shrink:0}
+.logo{width:32px;height:32px;background:var(--reddit-orange);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.logo svg{width:20px;height:20px}
+.header h1{font-size:15px;font-weight:600}
+.header p{font-size:11px;color:#818384}
+.tabs{display:flex;background:#1A1A1B;border-bottom:1px solid #343536;padding:0 8px;flex-shrink:0}
+.tab{padding:12px 16px;background:0;border:0;color:#818384;font-size:12px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s}
+.tab:hover{color:#D7DADC}
+.tab.active{color:#FF4500;border-bottom-color:#FF4500}
+.panels{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px}
+.panel{display:none}
+.panel.active{display:block}
+.section{background:#1A1A1B;border-radius:8px;padding:14px;margin-bottom:10px;border:1px solid #343536}
+.section-title{font-size:11px;color:#818384;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600}
+.input-group{margin-bottom:12px}
+.input-group label{display:block;font-size:11px;color:#818384;margin-bottom:6px}
+.input-group input,.input-group select{width:100%;padding:10px 12px;background:#272729;border:1px solid #343536;border-radius:6px;color:#D7DADC;font-size:13px;transition:border-color 0.2s}
+.input-group input::placeholder{color:#565657}
+.input-group input:focus{outline:none;border-color:#FF4500;background:#2a2a2c}
+.btn{width:100%;padding:12px;background:#FF4500;border:0;border-radius:20px;color:white;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;transition:all 0.2s}
+.btn:hover{background:#FF571A;transform:translateY(-1px)}
+.btn:disabled{background:#565657;cursor:not-allowed;transform:none}
+.btn.secondary{background:#343536;border:1px solid #565657}
+.btn.secondary:hover{background:#565657}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.stat{background:#1A1A1B;padding:12px 8px;border-radius:8px;text-align:center;border:1px solid #343536}
+.stat.high{border-color:#46D160;background:rgba(70,209,96,0.08)}
+.stat .value{font-size:20px;font-weight:700}
+.stat.high .value{color:#46D160}
+.stat .label{font-size:9px;color:#818384;text-transform:uppercase;letter-spacing:0.3px}
+.toggle{display:flex;justify-content:space-between;align-items:center;padding:8px 0}
+.toggle-label{font-size:13px}
+.toggle-switch{position:relative;width:44px;height:24px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:#343536;border-radius:24px;cursor:pointer;transition:0.3s}
+.toggle-slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:0.3s}
+.toggle-switch input:checked+.toggle-slider{background:#FF4500}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(20px)}
+.quick-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.quick-tag{padding:6px 12px;background:#272729;border:1px solid #343536;border-radius:16px;color:#818384;font-size:11px;cursor:pointer;transition:all 0.2s}
+.quick-tag:hover{border-color:#FF4500;color:#FF4500}
+.schedule-btns{display:flex;gap:6px}
+.schedule-btn{flex:1;padding:8px;background:#272729;border:1px solid #343536;border-radius:6px;color:#818384;font-size:11px;cursor:pointer;text-align:center;transition:all 0.2s}
+.schedule-btn:hover{border-color:#FF4500}
+.schedule-btn.active{background:#FF4500;color:white;border-color:#FF4500}
+.result-card{background:#1A1A1B;border-radius:8px;padding:14px;margin-bottom:8px;border:1px solid #343536;border-left:3px solid #343536}
+.result-card.high{border-left-color:#46D160}
+.result-card .meta{font-size:10px;color:#818384;margin-bottom:6px}
+.result-card .sub{color:#FF4500;font-weight:600}
+.result-card .title{font-size:13px;margin:8px 0}
+.result-card .analysis{background:#272729;padding:10px;border-radius:6px;margin-top:10px;font-size:11px;border-left:2px solid #0079D3}
+.export-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.export-btn{padding:12px 8px;background:#272729;border:1px solid #343536;border-radius:8px;color:#D7DADC;font-size:11px;cursor:pointer;text-align:center;transition:all 0.2s}
+.export-btn:hover{background:#343536;border-color:#FF4500}
+.status{text-align:center;padding:12px;font-size:12px;border-radius:8px;margin-bottom:12px;background:#272729;color:#818384}
+.status.success{color:#46D160;background:rgba(70,209,96,0.1)}
+.status.error{color:#ff6b6b;background:rgba(255,107,107,0.1)}
+.status.scanning{color:#FF4500;background:rgba(255,69,0,0.1)}
+.highlights{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.highlight-item{padding:6px 12px;background:#272729;border-radius:16px;font-size:11px;cursor:pointer}
+.highlight-item:hover{border-color:#FF4500}
+.highlight-item.active{background:#FF4500}
+.server-status{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#272729;border-radius:6px;margin-bottom:10px;font-size:11px}
+.server-status .dot{width:8px;height:8px;border-radius:50%;background:#565657}
+.server-status .dot.online{background:#46D160}
+.server-status .dot.offline{background:#ff6b6b}
+.server-status .text{color:#818384}
+.api-note{font-size:10px;color:#565657;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="header">
+  <div class="logo">
+    <svg viewBox="0 0 20 20" fill="white"><circle cx="10" cy="10" r="10"/><circle cx="6.5" cy="9.5" r="1.5" fill="#FF4500"/><circle cx="13.5" cy="9.5" r="1.5" fill="#FF4500"/><path d="M6 14C6 14 8 16 10 16C12 16 14 14 14 14" stroke="#FF4500" stroke-width="1.5" fill="none"/></svg>
+  </div>
+  <div><h1>Pain Point Scanner</h1><p>Find software opportunities on Reddit</p></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="scan">Scan</button>
+  <button class="tab" data-tab="settings">Settings</button>
+  <button class="tab" data-tab="ai">AI</button>
+  <button class="tab" data-tab="export">Export</button>
+</div>
+
+<div class="panels">
+  <div class="panel active" id="panel-scan">
+    <div class="server-status" id="serverStatus">
+      <span class="dot" id="serverDot"></span>
+      <span class="text" id="serverText">Checking...</span>
+      <button class="btn-start" id="startServerBtn" style="display:none;margin:0;padding:4px 10px;font-size:10px;background:#FF4500;border:none;border-radius:10px;color:white;cursor:pointer;margin-left:auto;">Start Server</button>
+    </div>
+    <div class="stats">
+      <div class="stat high"><div class="value" id="highCount">0</div><div class="label">High</div></div>
+      <div class="stat"><div class="value" id="mediumCount">0</div><div class="label">Medium</div></div>
+      <div class="stat"><div class="value" id="totalCount">0</div><div class="label">Total</div></div>
+      <div class="stat"><div class="value" id="aiCount">0</div><div class="label">AI</div></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Subreddits</div>
+      <div class="input-group"><input type="text" id="subreddits" value="shopify,notion,saas,startups,smallbusiness"></div>
+      <div class="quick-tags">
+        <button class="quick-tag" data-subs="shopify,notion,smallbusiness">Business</button>
+        <button class="quick-tag" data-subs="webdev,python,javascript">Dev</button>
+        <button class="quick-tag" data-subs="saas,startups,sideproject">SaaS</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Auto-Scan</div>
+      <div class="schedule-btns">
+        <button class="schedule-btn" data-interval="0">Manual</button>
+        <button class="schedule-btn" data-interval="15">15m</button>
+        <button class="schedule-btn active" data-interval="60">1h</button>
+        <button class="schedule-btn" data-interval="360">6h</button>
+      </div>
+    </div>
+    <div class="toggle">
+      <span class="toggle-label">AI Analysis</span>
+      <label class="toggle-switch"><input type="checkbox" id="aiToggle" checked><span class="toggle-slider"></span></label>
+    </div>
+    <button class="btn" id="scanBtn">Start Scan</button>
+    <div class="status" id="status">Ready to scan</div>
+    <div class="highlights" id="highlights"></div>
+    <div id="results"></div>
+  </div>
+
+  <div class="panel" id="panel-settings">
+    <div class="section">
+      <div class="section-title">API Keys</div>
+      <div class="input-group">
+        <label>OpenRouter API Key</label>
+        <input type="password" id="openrouterKey" placeholder="sk-or-...">
+        <div class="api-note">Free at openrouter.ai</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Webhooks</div>
+      <div class="input-group"><label>Discord Webhook</label><input type="text" id="discordWebhook" placeholder="https://discord.com/api/webhooks/..."></div>
+      <div class="input-group"><label>Slack Webhook</label><input type="text" id="slackWebhook" placeholder="https://hooks.slack.com/..."></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Notion Integration</div>
+      <div class="input-group"><label>Notion Token</label><input type="password" id="notionToken" placeholder="secret_..."></div>
+      <div class="input-group"><label>Database ID</label><input type="text" id="notionDbId" placeholder="32 char ID"></div>
+    </div>
+    <button class="btn" id="saveSettings">Save Settings</button>
+  </div>
+
+  <div class="panel" id="panel-ai">
+    <div class="section">
+      <div class="section-title">AI Model</div>
+      <div class="input-group">
+        <select id="aiModel">
+          <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
+          <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
+          <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+        </select>
+      </div>
+      <div class="input-group">
+        <label>Max Posts to Analyze</label>
+        <select id="maxAiPosts">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn secondary" id="testAI">Test AI Connection</button>
+  </div>
+
+  <div class="panel" id="panel-export">
+    <div class="section">
+      <div class="section-title">Export Data</div>
+      <div class="export-grid">
+        <button class="export-btn" id="exportCsv">CSV</button>
+        <button class="export-btn" id="exportJson">JSON</button>
+        <button class="export-btn" id="exportExcel">Excel</button>
+        <button class="export-btn" id="exportSheets">Sheets</button>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Notion Database</div>
+      <button class="btn secondary" id="exportNotion">Export to Notion</button>
+      <button class="btn secondary" id="clearData">Clear All Data</button>
+    </div>
+    <div class="section">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:#818384;font-size:12px">Total Leads</span>
+        <span id="totalLeads" style="font-weight:600;font-size:16px">0</span>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

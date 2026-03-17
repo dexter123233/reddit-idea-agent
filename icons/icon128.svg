@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="snooGrad128" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5700"/>
+      <stop offset="100%" style="stop-color:#FF4500"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#snooGrad128)"/>
+  <ellipse cx="64" cy="58" rx="38" ry="34" fill="white"/>
+  <circle cx="48" cy="52" r="8" fill="#FF4500"/>
+  <circle cx="80" cy="52" r="8" fill="#FF4500"/>
+  <path d="M42 80C42 80 54 96 64 96C74 96 86 80 86 80" stroke="#FF4500" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <text x="64" y="50" text-anchor="middle" fill="#FF4500" font-size="28" font-weight="bold" font-family="Arial, sans-serif">PP</text>
+</svg>

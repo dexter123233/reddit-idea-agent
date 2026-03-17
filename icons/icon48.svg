@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="snooGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF5700"/>
+      <stop offset="100%" style="stop-color:#FF4500"/>
+    </linearGradient>
+  </defs>
+  <circle cx="24" cy="24" r="24" fill="url(#snooGrad)"/>
+  <ellipse cx="24" cy="22" rx="14" ry="12" fill="white"/>
+  <circle cx="18" cy="20" r="3" fill="#FF4500"/>
+  <circle cx="30" cy="20" r="3" fill="#FF4500"/>
+  <path d="M16 30C16 30 20 36 24 36C28 36 32 30 32 30" stroke="#FF4500" stroke-width="3" stroke-linecap="round" fill="none"/>
+</svg>
