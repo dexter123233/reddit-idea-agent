@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
 Reddit Idea Agent - HTTP Server
-Execute via curl: curl -X POST http://localhost:8080/scan -d '{"subreddits": ["shopify", "notion"]}'
+Uses free Reddit JSON API (no credentials needed)
 """
 
 import json
-import os
 import sys
 import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen, Request
+from urllib.error import URLError
+from urllib.parse import urlparse
 
 CONFIG_DIR = Path.home() / ".reddit-idea-agent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -42,46 +43,46 @@ def load_config():
     return {}
 
 
-def get_reddit():
-    cfg = load_config()
-    cid = cfg.get("reddit_client_id") or os.environ.get("REDDIT_CLIENT_ID")
-    csec = cfg.get("reddit_client_secret") or os.environ.get("REDDIT_CLIENT_SECRET")
-    if not cid or not csec:
-        return None
+def fetch_reddit_json(subreddit, limit=25):
+    """Fetch posts from Reddit using free JSON API"""
+    url = f"https://www.reddit.com/r/{subreddit}/rising.json?limit={limit}"
+    headers = {"User-Agent": "RedditIdeaAgent/1.0"}
+    
     try:
-        import praw
-        return praw.Reddit(client_id=cid, client_secret=csec, user_agent="RedditIdeaAgent/1.0")
-    except:
-        return None
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return data.get("data", {}).get("children", [])
+    except Exception as e:
+        print(f"Error fetching r/{subreddit}: {e}")
+        return []
 
 
 def scan_subreddits(subreddits, limit=25):
-    reddit = get_reddit()
-    if not reddit:
-        return {"error": "Reddit credentials not configured. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET"}
-    
     results = []
     high = []
     medium = []
     
     for sr in subreddits:
         try:
-            sub = reddit.subreddit(sr)
-            posts = list(sub.rising(limit=limit))
-            for post in posts:
-                title = post.title.lower()
-                body = (post.selftext or "").lower()
+            posts = fetch_reddit_json(sr, limit)
+            
+            for post_data in posts:
+                post = post_data.get("data", {})
+                title = (post.get("title", "") or "").lower()
+                body = (post.get("selftext", "") or "").lower()
                 content = title + " " + body
                 
                 is_high = any(kw in content for kw in HIGH_INTENT)
                 is_med = any(kw in content for kw in MEDIUM_INTENT)
                 
                 pdata = {
-                    "id": post.id,
-                    "title": post.title,
+                    "id": post.get("id"),
+                    "title": post.get("title"),
                     "subreddit": sr,
-                    "url": f"https://reddit.com{post.permalink}",
-                    "score": post.score,
+                    "url": f"https://reddit.com{post.get('permalink')}",
+                    "score": post.get("score", 0),
+                    "comments": post.get("num_comments", 0),
                     "intent": "high" if is_high else ("medium" if is_med else "low"),
                 }
                 
@@ -90,9 +91,12 @@ def scan_subreddits(subreddits, limit=25):
                 elif is_med:
                     medium.append(pdata)
                 results.append(pdata)
-            time.sleep(0.5)
+            
+            print(f"  r/{sr}: {len(posts)} posts")
+            time.sleep(1)
+            
         except Exception as e:
-            results.append({"error": str(e), "subreddit": sr})
+            print(f"  r/{sr}: error - {e}")
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -119,11 +123,12 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             resp = {
                 "name": "Reddit Idea Agent",
-                "version": "1.0.0",
+                "version": "2.0.0",
+                "api": "Free Reddit JSON API (no credentials needed)",
                 "endpoints": {
                     "POST /scan": "Scan subreddits",
                     "GET /list": "List subreddits",
-                    "POST /config": "Set config",
+                    "GET /results": "Recent scan results",
                 }
             }
             self.wfile.write(json.dumps(resp, indent=2).encode())
@@ -132,6 +137,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(SUBREDDITS, indent=2).encode())
+        elif parsed.path == "/results":
+            if DATA_DIR.exists():
+                files = sorted(DATA_DIR.glob("scan_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]
+                results = []
+                for f in files:
+                    data = json.loads(f.read_text())
+                    results.append({"file": f.name, "total": len(data.get("results", [])), "high": len(data.get("high", []))})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(results, indent=2).encode())
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps([]).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -150,24 +171,13 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/scan":
             subreddits = data.get("subreddits", ["shopify", "smallbusiness", "notion"])
             limit = data.get("limit", 25)
+            print(f"\nScanning: {subreddits}")
             result = scan_subreddits(subreddits, limit)
             
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(result, indent=2).encode())
-        
-        elif parsed.path == "/config":
-            cfg = load_config()
-            cfg.update(data)
-            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            with open(CONFIG_FILE, "w") as f:
-                json.dump(cfg, f, indent=2)
-            
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok"}).encode())
         
         else:
             self.send_response(404)
@@ -180,14 +190,16 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     print(f"Reddit Idea Agent server running on http://localhost:{port}")
-    print("Endpoints:")
-    print("  POST /scan   - Scan subreddits")
-    print("  GET  /list   - List subreddits")
-    print("  POST /config - Set config")
+    print("Using free Reddit JSON API - no credentials needed!")
     print("")
-    print("Example curl commands:")
+    print("Endpoints:")
+    print("  GET  /          - Status")
+    print("  POST /scan     - Scan subreddits")
+    print("  GET  /list     - List subreddits")
+    print("  GET  /results  - Recent results")
+    print("")
+    print("Example:")
     print(f'  curl -X POST http://localhost:{port}/scan -H "Content-Type: application/json" -d \'{{"subreddits": ["shopify", "notion"]}}\'')
-    print(f'  curl http://localhost:{port}/list')
     
     server = HTTPServer(("0.0.0.0", port), Handler)
     server.serve_forever()
