@@ -226,7 +226,8 @@ def export_csv():
     filename = DATA_DIR / f"export_{ts}.csv"
     
     with open(filename, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["title", "subreddit", "url", "score", "comments", "intent"])
+        fieldnames = ["title", "subreddit", "url", "score", "comments", "intent"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(results_cache["high"])
     
