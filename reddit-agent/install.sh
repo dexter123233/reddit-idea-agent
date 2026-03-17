@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reddit Idea Agent - Single command startup (no dependencies needed!)
+# Reddit Idea Agent - Single command startup
 # Run: bash <(curl -sSL https://raw.githubusercontent.com/dexter123233/reddit-idea-agent/main/reddit-agent/install.sh)
 
 set -e
@@ -13,16 +13,10 @@ cd "$TMP_DIR/reddit-agent"
 
 echo ""
 echo "========================================"
-echo "Reddit Idea Agent - Server Running"
+echo "Reddit Idea Agent"
 echo "========================================"
 echo ""
-echo "Using free Reddit JSON API - no credentials!"
-echo "Server: http://localhost:8080"
-echo ""
-echo "Commands:"
-echo "  curl -X POST http://localhost:8080/scan -H 'Content-Type: application/json' -d '{\"subreddits\": [\"shopify\", \"notion\"]}'"
-echo "  curl http://localhost:8080/list"
-echo "  curl http://localhost:8080/results"
+echo "Starting in TUI mode..."
 echo ""
 
-exec python3 server.py
+exec python3 reddit

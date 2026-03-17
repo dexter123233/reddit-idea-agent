@@ -1,328 +1,225 @@
 #!/usr/bin/env python3
 """
-Reddit Idea Agent - CLI Tool for Scraping Reddit for Business Ideas
-OpenCode-style CLI
+Reddit Idea Agent - OpenCode-style TUI
 """
 
-import argparse
 import json
-import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from urllib.request import urlopen, Request
+from urllib.parse import urlparse
 
-try:
-    import praw
-except ImportError:
-    print("Installing praw...")
-    os.system("pip install praw -q")
-    import praw
-
-try:
-    import requests
-except ImportError:
-    print("Installing requests...")
-    os.system("pip install requests -q")
-    import requests
-
-CONFIG_DIR = Path.home() / ".reddit-idea-agent"
-CONFIG_FILE = CONFIG_DIR / "config.json"
-DATA_DIR = CONFIG_DIR / "data"
+HEADER = """
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║   ██████╗ ███████╗██╗    ██╗███████╗██╗      ██████╗ ██████╗  ║
+║   ██╔══██╗██╔════╝██║    ██║██╔════╝██║     ██╔═══██╗██╔══██╗ ║
+║   ██║  ██║█████╗  ██║ █╗ ██║█████╗  ██║     ██║   ██║██████╔╝ ║
+║   ██║  ██║██╔══╝  ██║███╗██║██╔══╝  ██║     ██║   ██║██╔══██╗ ║
+║   ██████╔╝███████╗╚███╔███╔╝███████╗███████╗╚██████╔╝██║  ██║ ║
+║   ╚═════╝ ╚══════╝ ╚══╝╚══╝ ╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝ ║
+║                         ██████╗ ███████╗                        ║
+║                         ██╔══██╗██╔════╝                        ║
+║                         ██║  ██║█████╗                          ║
+║                         ██║  ██║██╔══╝                          ║
+║                         ██████╔╝███████╗                        ║
+║                         ╚═════╝ ╚══════╝                        ║
+║                                                                  ║
+║              🤖 AGENTIC AI FOR SCRAPING REDDIT                   ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+"""
 
 SUBREDDITS = {
-    "shopify": "E-commerce platform",
-    "shopifyapps": "Shopify apps",
-    "dropshipping": "Dropshipping",
-    "smallbusiness": "Small business",
-    "entrepreneur": "Entrepreneurship",
-    "startups": "Startups",
-    "sideproject": "Side projects",
-    "saas": "SaaS businesses",
-    "webdev": "Web development",
-    "python": "Python",
-    "javascript": "JavaScript",
-    "reactjs": "React",
-    "aws": "AWS cloud",
-    "notion": "Notion",
-    "n8n": "n8n automation",
-    "zapier": "Zapier",
-    "airtable": "Airtable",
-    "productivity": "Productivity",
-    "freelance": "Freelancers",
-    "indiehackers": "Indie hackers",
-    "bootstrapped": "Bootstrapped",
+    "shopify": "E-commerce", "shopifyapps": "Shopify apps", "dropshipping": "Dropshipping",
+    "smallbusiness": "Small business", "entrepreneur": "Entrepreneurship", "startups": "Startups",
+    "sideproject": "Side projects", "saas": "SaaS", "webdev": "Web dev", "python": "Python",
+    "javascript": "JavaScript", "reactjs": "React", "aws": "AWS", "notion": "Notion",
+    "n8n": "n8n", "zapier": "Zapier", "airtable": "Airtable", "productivity": "Productivity",
+    "freelance": "Freelance", "indiehackers": "Indie hackers", "bootstrapped": "Bootstrapped",
 }
 
 HIGH_INTENT = [
-    "is there a tool", "is there an app", "looking for a tool",
-    "recommend a tool", "need a tool", "searching for",
-    "how do i automate", "can i automate", "is there a way to",
-    "why isn't there", "there should be", "i wish there was",
-    "tired of", "sick of", "hate it when", "frustrated with",
-    "manually", "tedious", "repetitive", "time consuming",
+    "is there a tool", "is there an app", "looking for a tool", "recommend a tool", "need a tool",
+    "how do i automate", "can i automate", "is there a way to", "why isn't there", "there should be",
+    "i wish there was", "tired of", "sick of", "hate it when", "manually", "tedious", "repetitive",
 ]
 
-MEDIUM_INTENT = [
-    "how do i", "how can i", "help me", "any ideas",
-    "looking for", "thinking about", "considering",
-    "struggling with", "having trouble", "problem with",
-]
+MEDIUM_INTENT = ["how do i", "how can i", "help me", "looking for", "struggling with", "having trouble"]
+
+DATA_DIR = Path.home() / ".reddit-idea-agent" / "data"
+results_cache = {"high": [], "medium": [], "total": 0}
 
 
-def load_config() -> dict:
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE) as f:
-            return json.load(f)
-    return {}
-
-
-def save_config(config: dict):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
-
-
-def get_reddit():
-    config = load_config()
-    client_id = config.get("reddit_client_id") or os.environ.get("REDDIT_CLIENT_ID")
-    client_secret = config.get("reddit_client_secret") or os.environ.get("REDDIT_CLIENT_SECRET")
-    
-    if not client_id or not client_secret:
-        return None
-    
-    return praw.Reddit(
-        client_id=client_id,
-        client_secret=client_secret,
-        user_agent="RedditIdeaAgent/1.0"
-    )
-
-
-def get_ai(prompt: str) -> Optional[str]:
-    config = load_config()
-    api_key = config.get("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY")
-    
-    if not api_key:
-        return None
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    
+def fetch_reddit(subreddit, limit=25):
+    url = f"https://www.reddit.com/r/{subreddit}/rising.json?limit={limit}"
+    headers = {"User-Agent": "RedditIdeaAgent/1.0"}
     try:
-        resp = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json={"model": "anthropic/claude-3-haiku-20240307", "messages": [{"role": "user", "content": prompt}]},
-            timeout=30
-        )
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
-    except:
-        pass
-    return None
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return data.get("data", {}).get("children", [])
+    except Exception as e:
+        return []
 
 
-def cmd_scan(args):
-    reddit = get_reddit()
-    if not reddit:
-        print("Error: Reddit credentials not configured")
-        print("Run: reddit config")
-        return 1
-    
-    subreddits = args.subreddits or ["shopify", "smallbusiness", "notion"]
-    limit = args.limit
-    
-    print(f"Scanning: {', '.join(['r/' + s for s in subreddits])}")
-    print(f"Posts per subreddit: {limit}\n")
-    
+def run_scan(subreddits):
+    global results_cache
     results = []
     high = []
     medium = []
     
+    print(f"\n{'─' * 60}")
+    print(f"Scanning: {', '.join([f'r/{s}' for s in subreddits])}")
+    print(f"{'─' * 60}\n")
+    
     for sr in subreddits:
-        try:
-            sub = reddit.subreddit(sr)
-            posts = list(sub.rising(limit=limit))
+        posts = fetch_reddit(sr, 25)
+        for post_data in posts:
+            post = post_data.get("data", {})
+            title = (post.get("title", "") or "").lower()
+            body = (post.get("selftext", "") or "").lower()
+            content = title + " " + body
             
-            for post in posts:
-                title = post.title.lower()
-                body = post.selftext.lower() if post.selftext else ""
-                content = title + " " + body
-                
-                is_high = any(kw in content for kw in HIGH_INTENT)
-                is_med = any(kw in content for kw in MEDIUM_INTENT)
-                
-                post_data = {
-                    "id": post.id,
-                    "title": post.title,
-                    "subreddit": sr,
-                    "url": f"https://reddit.com{post.permalink}",
-                    "score": post.score,
-                    "comments": post.num_comments,
-                    "intent": "high" if is_high else ("medium" if is_med else "low"),
-                    "keywords": [kw for kw in HIGH_INTENT + MEDIUM_INTENT if kw in content]
-                }
-                
-                if is_high:
-                    high.append(post_data)
-                elif is_med:
-                    medium.append(post_data)
-                results.append(post_data)
+            is_high = any(kw in content for kw in HIGH_INTENT)
+            is_med = any(kw in content for kw in MEDIUM_INTENT)
             
-            print(f"  r/{sr}: {len(posts)} posts scanned")
-            time.sleep(0.5)
+            pdata = {
+                "id": post.get("id"),
+                "title": post.get("title"),
+                "subreddit": sr,
+                "url": f"https://reddit.com{post.get('permalink')}",
+                "score": post.get("score", 0),
+                "intent": "high" if is_high else ("medium" if is_med else "low"),
+            }
             
-        except Exception as e:
-            print(f"  r/{sr}: error - {e}")
+            if is_high:
+                high.append(pdata)
+            elif is_med:
+                medium.append(pdata)
+            results.append(pdata)
+        
+        print(f"  ✓ r/{sr}: {len(posts)} posts scanned")
+        time.sleep(1)
     
-    print(f"\nResults: {len(results)} total | {len(high)} high | {len(medium)} medium\n")
-    
-    if high:
-        print("High Intent Posts:")
-        for i, p in enumerate(high[:5], 1):
-            print(f"  {i}. {p['title'][:60]}")
-            print(f"     r/{p['subreddit']} | {p['score']} pts | {p['url']}")
+    results_cache = {"high": high, "medium": medium, "total": len(results)}
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_file = DATA_DIR / f"scan_{ts}.json"
-    with open(out_file, "w") as f:
-        json.dump({"results": results, "high": high, "medium": medium, "subreddits": subreddits}, f, indent=2)
+    with open(DATA_DIR / f"scan_{ts}.json", "w") as f:
+        json.dump({"results": results, "high": high, "medium": medium}, f, indent=2)
     
-    print(f"\nSaved to: {out_file}")
-    return 0
+    print(f"\n{'─' * 60}")
+    print(f"✓ Scan complete!")
+    print(f"  Total: {len(results)} | High: {len(high)} | Medium: {len(medium)}")
+    print(f"{'─' * 60}\n")
 
 
-def cmd_list(args):
-    print("\nAvailable Subreddits:\n")
+def show_help():
+    print("""
+Commands:
+  scan <subreddits>    Scan subreddits (default: shopify, smallbusiness, notion)
+  list                 Show available subreddits
+  results              Show high intent results
+  clear                Clear screen
+  help                 Show this help
+  exit                 Exit
+
+Examples:
+  scan shopify
+  scan shopify smallbusiness notion
+  results
+""")
+
+
+def show_list():
+    print(f"\n{'─' * 60}")
+    print("Available Subreddits:")
+    print(f"{'─' * 60}")
     cats = {
         "E-commerce": ["shopify", "shopifyapps", "dropshipping"],
-        "Business": ["smallbusiness", "entrepreneur", "startups", "freelance", "indiehackers", "bootstrapped"],
+        "Business": ["smallbusiness", "entrepreneur", "startups", "freelance", "indiehackers"],
         "Tech": ["webdev", "python", "javascript", "reactjs", "aws"],
-        "Productivity": ["notion", "n8n", "zapier", "airtable", "productivity"],
+        "Productivity": ["notion", "n8n", "zapier", "airtable"],
         "SaaS": ["saas", "sideproject"]
     }
-    
     for cat, subs in cats.items():
-        print(f"{cat}:")
+        print(f"\n  {cat}:")
         for s in subs:
-            print(f"  r/{s}")
+            print(f"    r/{s}")
+    print(f"\n{'─' * 60}\n")
+
+
+def show_results():
+    if not results_cache["high"]:
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    print(f"\n{'─' * 60}")
+    print("HIGH INTENT RESULTS:")
+    print(f"{'─' * 60}\n")
+    
+    for i, p in enumerate(results_cache["high"][:10], 1):
+        print(f"  {i}. {p['title'][:60]}")
+        print(f"     r/{p['subreddit']} | {p['score']} pts")
+        print(f"     {p['url']}")
         print()
-    return 0
 
 
-def cmd_config(args):
-    config = load_config()
+def interactive():
+    print(HEADER)
+    print("Type 'help' for commands\n")
     
-    print("Configure API Keys (press Enter to skip):\n")
-    
-    cid = input("Reddit Client ID: ").strip() or config.get("reddit_client_id", "")
-    csec = input("Reddit Client Secret: ").strip() or config.get("reddit_client_secret", "")
-    orkey = input("OpenRouter API Key: ").strip() or config.get("openrouter_api_key", "")
-    
-    save_config({
-        "reddit_client_id": cid,
-        "reddit_client_secret": csec,
-        "openrouter_api_key": orkey
-    })
-    
-    print("\nConfig saved to ~/.reddit-idea-agent/config.json")
-    return 0
-
-
-def cmd_results(args):
-    if not DATA_DIR.exists():
-        print("No results found")
-        return 0
-    
-    files = sorted(DATA_DIR.glob("scan_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
-    
-    if not files:
-        print("No results found")
-        return 0
-    
-    print(f"Found {len(files)} scan(s):\n")
-    for i, f in enumerate(files[:10], 1):
-        data = json.loads(f.read_text())
-        ts = data.get("subreddits", ["?"])[0]
-        total = len(data.get("results", []))
-        high = len(data.get("high", []))
-        medium = len(data.get("medium", []))
-        print(f"  {i}. {ts}... | {total} posts | {high} high | {medium} medium")
-    return 0
+    while True:
+        try:
+            cmd = input("› ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye!")
+            break
+        
+        if not cmd:
+            continue
+        
+        parts = cmd.split()
+        command = parts[0].lower()
+        args = parts[1:]
+        
+        if command in ["exit", "quit", "q"]:
+            print("Goodbye!")
+            break
+        elif command == "help":
+            show_help()
+        elif command == "list":
+            show_list()
+        elif command == "clear":
+            print(HEADER)
+        elif command == "scan":
+            subreddits = args if args else ["shopify", "smallbusiness", "notion"]
+            run_scan(subreddits)
+        elif command == "results":
+            show_results()
+        else:
+            print(f"Unknown command: {command}")
+            print("Type 'help' for available commands\n")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Reddit Idea Agent - AI-powered Reddit pain point scanner",
-        add_help=False
-    )
-    
-    parser.add_argument("command", nargs="?", help="Command to run")
-    parser.add_argument("args", nargs="*", help="Command arguments")
-    parser.add_argument("-h", "--help", action="store_true")
-    parser.add_argument("-v", "--version", action="store_true")
-    
-    args = parser.parse_args()
-    
-    print("""
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-█                                                        
-█   ██████╗ ███████╗██╗    ██╗███████╗██╗      ██████╗ 
-█   ██╔══██╗██╔════╝██║    ██║██╔════╝██║     ██╔═══██╗
-█   ██║  ██║█████╗  ██║ █╗ ██║█████╗  ██║     ██║   ██║
-█   ██║  ██║██╔══╝  ██║███╗██║██╔══╝  ██║     ██║   ██║
-█   ██████╔╝███████╗╚███╔███╔╝███████╗███████╗╚██████╔╝
-█   ╚═════╝ ╚══════╝ ╚══╝╚══╝ ╚══════╝╚══════╝ ╚═════╝ 
-█                                                       
-█        AGENTIC AI FOR SCRAPING REDDIT FOR IDEAS       
-▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-""")
-    
-    if args.version:
-        print("reddit v1.0.0")
-        return 0
-    
-    if args.help or not args.command:
-        print("Commands:")
-        print("  reddit scan <subreddits..>   scan subreddits for pain points")
-        print("  reddit list                  list available subreddits")
-        print("  reddit config                configure API keys")
-        print("  reddit results               show saved scan results")
-        print("")
-        print("Options:")
-        print("  -h, --help         show help")
-        print("  -v, --version      show version")
-        print("")
-        print("Examples:")
-        print("  reddit scan shopify smallbusiness notion")
-        print("  reddit scan")
-        print("  reddit config")
-        return 0
-    
-    cmd = args.command.lower()
-    
-    if cmd == "scan":
-        class ScanArgs:
-            def __init__(self, subreddits, limit=25):
-                self.subreddits = subreddits
-                self.limit = limit
-        scan_args = ScanArgs(args.args if args.args else None)
-        return cmd_scan(scan_args)
-    elif cmd == "list":
-        return cmd_list(args)
-    elif cmd == "config":
-        return cmd_config(args)
-    elif cmd == "results":
-        return cmd_results(args)
+    if len(sys.argv) > 1 and sys.argv[1] == "--help":
+        print("Usage: reddit")
+        print("       reddit scan <subreddits>")
+        print("       reddit --server [port]")
+    elif len(sys.argv) > 1 and sys.argv[1] == "--server":
+        port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+        from server import run_server
+        run_server(port)
+    elif len(sys.argv) > 1 and sys.argv[1] == "scan":
+        subreddits = sys.argv[2:] if len(sys.argv) > 2 else ["shopify", "smallbusiness", "notion"]
+        run_scan(subreddits)
     else:
-        print(f"Unknown command: {cmd}")
-        print("Run: reddit --help")
-        return 1
+        interactive()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

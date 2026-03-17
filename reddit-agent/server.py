@@ -205,5 +205,12 @@ def main():
     server.serve_forever()
 
 
+def run_server(port=8080):
+    """Run the HTTP server (imported by CLI)"""
+    print(f"Reddit Idea Agent server running on http://localhost:{port}")
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    server.serve_forever()
+
+
 if __name__ == "__main__":
     main()
