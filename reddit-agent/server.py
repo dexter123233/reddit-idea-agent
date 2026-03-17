@@ -311,35 +311,38 @@ def export_to_json(posts, pretty=True):
     return json.dumps(posts, indent=2 if pretty else None)
 
 
+import mimetypes
+
+HTML_FILE = Path(__file__).parent / "index.html"
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
         
         if path == "/":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            config = load_config()
-            resp = {
-                "name": "Reddit Idea Agent",
-                "version": "3.0.0",
-                "integrations": ["discord", "slack", "notion", "csv", "json", "ai"],
-                "endpoints": {
-                    "GET /": "Status",
-                    "POST /scan": "Scan subreddits",
-                    "GET /list": "List subreddits",
-                    "GET /results": "Recent results",
-                    "POST /config": "Set config",
-                    "POST /export/csv": "Export to CSV",
-                    "POST /export/json": "Export to JSON",
-                    "POST /ai/analyze": "AI analysis",
-                    "POST /webhook/discord": "Send to Discord",
-                    "POST /webhook/slack": "Send to Slack",
-                    "POST /notion": "Export to Notion",
+            if HTML_FILE.exists():
+                html = HTML_FILE.read_text()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(html.encode())
+            else:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                resp = {
+                    "name": "Reddit AI Scraper",
+                    "version": "3.0.0",
+                    "ui": "Open http://localhost:8080 in browser",
+                    "endpoints": {
+                        "GET /": "This page",
+                        "POST /scan": "Scan subreddits",
+                        "GET /list": "List subreddits",
+                        "POST /config": "Set config",
+                    }
                 }
-            }
-            self.wfile.write(json.dumps(resp, indent=2).encode())
+                self.wfile.write(json.dumps(resp, indent=2).encode())
         
         elif path == "/list":
             self.send_response(200)
