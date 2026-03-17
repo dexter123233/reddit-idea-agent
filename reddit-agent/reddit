@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """
-Reddit Idea Agent - OpenCode-style TUI
+Reddit Idea Agent - OpenCode-style TUI with Full Integrations
 """
 
 import json
 import sys
 import time
+import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
-from urllib.request import urlopen, Request
-from urllib.parse import urlparse
 
 HEADER = """
 ╔══════════════════════════════════════════════════════════════════╗
-║                                                                  ║
 ║   ██████╗ ███████╗██╗    ██╗███████╗██╗      ██████╗ ██████╗  ║
 ║   ██╔══██╗██╔════╝██║    ██║██╔════╝██║     ██╔═══██╗██╔══██╗ ║
-║   ██║  ██║█████╗  ██║ █╗ ██║█████╗  ██║     ██║   ██║██████╔╝ ║
+║   ██║  ██║█████╗  ██� █╗ ██║█████╗  ██║     ██║   ██║██████╔╝ ║
 ║   ██║  ██║██╔══╝  ██║███╗██║██╔══╝  ██║     ██║   ██║██╔══██╗ ║
 ║   ██████╔╝███████╗╚███╔███╔╝███████╗███████╗╚██████╔╝██║  ██║ ║
 ║   ╚═════╝ ╚══════╝ ╚══╝╚══╝ ╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝ ║
@@ -26,9 +25,7 @@ HEADER = """
 ║                         ██║  ██║██╔══╝                          ║
 ║                         ██████╔╝███████╗                        ║
 ║                         ╚═════╝ ╚══════╝                        ║
-║                                                                  ║
 ║              🤖 AGENTIC AI FOR SCRAPING REDDIT                   ║
-║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
@@ -41,6 +38,10 @@ SUBREDDITS = {
     "freelance": "Freelance", "indiehackers": "Indie hackers", "bootstrapped": "Bootstrapped",
 }
 
+CONFIG_DIR = Path.home() / ".reddit-idea-agent"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+DATA_DIR = CONFIG_DIR / "data"
+
 HIGH_INTENT = [
     "is there a tool", "is there an app", "looking for a tool", "recommend a tool", "need a tool",
     "how do i automate", "can i automate", "is there a way to", "why isn't there", "there should be",
@@ -49,11 +50,24 @@ HIGH_INTENT = [
 
 MEDIUM_INTENT = ["how do i", "how can i", "help me", "looking for", "struggling with", "having trouble"]
 
-DATA_DIR = Path.home() / ".reddit-idea-agent" / "data"
 results_cache = {"high": [], "medium": [], "total": 0}
 
 
+def load_config():
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    return {}
+
+
+def save_config(config):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
 def fetch_reddit(subreddit, limit=25):
+    from urllib.request import urlopen, Request
     url = f"https://www.reddit.com/r/{subreddit}/rising.json?limit={limit}"
     headers = {"User-Agent": "RedditIdeaAgent/1.0"}
     try:
@@ -92,6 +106,7 @@ def run_scan(subreddits):
                 "subreddit": sr,
                 "url": f"https://reddit.com{post.get('permalink')}",
                 "score": post.get("score", 0),
+                "comments": post.get("num_comments", 0),
                 "intent": "high" if is_high else ("medium" if is_med else "low"),
             }
             
@@ -104,12 +119,12 @@ def run_scan(subreddits):
         print(f"  ✓ r/{sr}: {len(posts)} posts scanned")
         time.sleep(1)
     
-    results_cache = {"high": high, "medium": medium, "total": len(results)}
+    results_cache = {"high": high, "medium": medium, "total": len(results), "subreddits": subreddits}
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     with open(DATA_DIR / f"scan_{ts}.json", "w") as f:
-        json.dump({"results": results, "high": high, "medium": medium}, f, indent=2)
+        json.dump(results_cache, f, indent=2)
     
     print(f"\n{'─' * 60}")
     print(f"✓ Scan complete!")
@@ -120,17 +135,25 @@ def run_scan(subreddits):
 def show_help():
     print("""
 Commands:
-  scan <subreddits>    Scan subreddits (default: shopify, smallbusiness, notion)
-  list                 Show available subreddits
-  results              Show high intent results
-  clear                Clear screen
-  help                 Show this help
-  exit                 Exit
+  scan <subs>           Scan subreddits (default: shopify smallbusiness notion)
+  list                  Show available subreddits
+  results               Show high intent results
+  config                Configure API keys & webhooks
+  export csv            Export last results to CSV
+  export json           Export last results to JSON
+  discord               Send results to Discord webhook
+  slack                 Send results to Slack webhook
+  ai                    Run AI analysis on results
+  clear                 Clear screen
+  server                 Start HTTP server (port 8080)
+  help                  Show this help
+  exit                  Exit
 
-Examples:
-  scan shopify
-  scan shopify smallbusiness notion
-  results
+Integrations:
+  • Discord/Slack webhooks - Get notifications
+  • Notion - Export to database
+  • OpenRouter AI - Analyze opportunities
+  • CSV/JSON - Export data
 """)
 
 
@@ -153,19 +176,204 @@ def show_list():
 
 
 def show_results():
-    if not results_cache["high"]:
+    if not results_cache.get("high"):
         print("\nNo results. Run 'scan' first.\n")
         return
     
     print(f"\n{'─' * 60}")
-    print("HIGH INTENT RESULTS:")
+    print(f"HIGH INTENT RESULTS ({len(results_cache['high'])}):")
     print(f"{'─' * 60}\n")
     
-    for i, p in enumerate(results_cache["high"][:10], 1):
+    for i, p in enumerate(results_cache["high"][:15], 1):
         print(f"  {i}. {p['title'][:60]}")
-        print(f"     r/{p['subreddit']} | {p['score']} pts")
+        print(f"     r/{p['subreddit']} | {p['score']} pts | {p['comments']} comments")
         print(f"     {p['url']}")
         print()
+
+
+def configure():
+    config = load_config()
+    print(f"\n{'─' * 60}")
+    print("Configuration")
+    print(f"{'─' * 60}\n")
+    
+    print("Current config:")
+    for k, v in config.items():
+        if "webhook" in k or "token" in k or "secret" in k:
+            v = v[:10] + "..." if v and len(v) > 10 else v
+        print(f"  {k}: {v}")
+    
+    print("\nSet values (press Enter to skip):\n")
+    
+    config["openrouter_api_key"] = input("OpenRouter API Key: ").strip() or config.get("openrouter_api_key", "")
+    config["discord_webhook"] = input("Discord Webhook URL: ").strip() or config.get("discord_webhook", "")
+    config["slack_webhook"] = input("Slack Webhook URL: ").strip() or config.get("slack_webhook", "")
+    config["notion_token"] = input("Notion Token: ").strip() or config.get("notion_token", "")
+    config["notion_db_id"] = input("Notion Database ID: ").strip() or config.get("notion_db_id", "")
+    
+    save_config(config)
+    print(f"\n✓ Config saved!\n")
+
+
+def export_csv():
+    if not results_cache.get("high"):
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    import csv
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = DATA_DIR / f"export_{ts}.csv"
+    
+    with open(filename, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["title", "subreddit", "url", "score", "comments", "intent"])
+        writer.writeheader()
+        writer.writerows(results_cache["high"])
+    
+    print(f"\n✓ Exported to {filename}\n")
+
+
+def export_json():
+    if not results_cache.get("high"):
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = DATA_DIR / f"export_{ts}.json"
+    
+    with open(filename, "w") as f:
+        json.dump(results_cache["high"], f, indent=2)
+    
+    print(f"\n✓ Exported to {filename}\n")
+
+
+def send_discord():
+    config = load_config()
+    webhook = config.get("discord_webhook")
+    
+    if not webhook:
+        print("\nDiscord webhook not configured. Run 'config' first.\n")
+        return
+    
+    if not results_cache.get("high"):
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    print(f"\nSending to Discord...")
+    from urllib.request import urlopen, Request
+    
+    embed = {
+        "title": "🔥 New Pain Points Found!",
+        "description": f"Found {len(results_cache['high'])} high-intent posts",
+        "color": 0xFF6B6B,
+        "fields": []
+    }
+    
+    for p in results_cache["high"][:5]:
+        embed["fields"].append({
+            "name": p["title"][:100],
+            "value": f"r/{p['subreddit']} | {p['score']} pts\n{p['url']}",
+            "inline": False
+        })
+    
+    data = {"embeds": [embed]}
+    
+    try:
+        req = Request(webhook, data=json.dumps(data).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(req, timeout=10):
+            print("✓ Sent to Discord!\n")
+    except Exception as e:
+        print(f"✗ Error: {e}\n")
+
+
+def send_slack():
+    config = load_config()
+    webhook = config.get("slack_webhook")
+    
+    if not webhook:
+        print("\nSlack webhook not configured. Run 'config' first.\n")
+        return
+    
+    if not results_cache.get("high"):
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    print(f"\nSending to Slack...")
+    from urllib.request import urlopen, Request
+    
+    blocks = [
+        {"type": "header", "text": {"type": "plain_text", "text": "🔥 New Pain Points Found!"}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"Found *{len(results_cache['high'])}* high-intent posts"}},
+        {"type": "divider"}
+    ]
+    
+    for p in results_cache["high"][:5]:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*{p['title'][:80]}*\n• r/{p['subreddit']} | {p['score']} pts\n• <{p['url']}|View>"}
+        })
+    
+    try:
+        req = Request(webhook, data=json.dumps({"blocks": blocks}).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(req, timeout=10):
+            print("✓ Sent to Slack!\n")
+    except Exception as e:
+        print(f"✗ Error: {e}\n")
+
+
+def run_ai():
+    config = load_config()
+    api_key = config.get("openrouter_api_key")
+    
+    if not api_key:
+        print("\nOpenRouter API key not configured. Run 'config' first.\n")
+        return
+    
+    if not results_cache.get("high"):
+        print("\nNo results. Run 'scan' first.\n")
+        return
+    
+    print(f"\n{'─' * 60}")
+    print("AI Analysis (Gemini 2.0 Flash)")
+    print(f"{'─' * 60}\n")
+    
+    from urllib.request import urlopen, Request
+    
+    for i, p in enumerate(results_cache["high"][:5], 1):
+        prompt = f"""Analyze for business opportunity:
+
+Title: {p['title']}
+Subreddit: r/{p['subreddit']}
+URL: {p['url']}
+
+Provide: 1) Problem, 2) Solution, 3) Monetization (1-10)
+"""
+        try:
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://reddit-idea-agent.local", "X-Title": "Reddit Idea Agent"}
+            data = {"model": "google/gemini-2.0-flash-001", "messages": [{"role": "user", "content": prompt}]}
+            req = Request("https://openrouter.ai/api/v1/chat/completions", data=json.dumps(data).encode(), headers=headers, method="POST")
+            with urlopen(req, timeout=30) as response:
+                result = json.loads(response.read().decode())
+                analysis = result["choices"][0]["message"]["content"]
+                print(f"▸ {p['title'][:50]}...")
+                print(f"  {analysis}\n")
+        except Exception as e:
+            print(f"✗ Error: {e}\n")
+
+
+def start_server():
+    print("\nStarting HTTP server on port 8080...")
+    print("Use curl commands to interact:\n")
+    print("  curl -X POST http://localhost:8080/scan -H 'Content-Type: application/json' -d '{\"subreddits\": [\"shopify\"]}'")
+    print("  curl -X POST http://localhost:8080/config -H 'Content-Type: application/json' -d '{\"discord_webhook\": \"URL\"}'")
+    print("")
+    
+    from server import run_server
+    try:
+        run_server(8080)
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
 
 
 def interactive():
@@ -200,23 +408,42 @@ def interactive():
             run_scan(subreddits)
         elif command == "results":
             show_results()
+        elif command == "config":
+            configure()
+        elif command == "export" and args:
+            if args[0] == "csv":
+                export_csv()
+            elif args[0] == "json":
+                export_json()
+        elif command == "discord":
+            send_discord()
+        elif command == "slack":
+            send_slack()
+        elif command == "ai":
+            run_ai()
+        elif command == "server":
+            start_server()
         else:
-            print(f"Unknown command: {command}")
-            print("Type 'help' for available commands\n")
+            print(f"Unknown: {command}. Type 'help' for commands.\n")
 
 
 def main():
-    if len(sys.argv) > 1 and sys.argv[1] == "--help":
-        print("Usage: reddit")
-        print("       reddit scan <subreddits>")
-        print("       reddit --server [port]")
-    elif len(sys.argv) > 1 and sys.argv[1] == "--server":
-        port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
-        from server import run_server
-        run_server(port)
-    elif len(sys.argv) > 1 and sys.argv[1] == "scan":
-        subreddits = sys.argv[2:] if len(sys.argv) > 2 else ["shopify", "smallbusiness", "notion"]
-        run_scan(subreddits)
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--server":
+            from server import run_server
+            run_server(8080)
+        elif sys.argv[1] == "scan":
+            subreddits = sys.argv[2:] if len(sys.argv) > 2 else ["shopify", "smallbusiness", "notion"]
+            run_scan(subreddits)
+        elif sys.argv[1] == "config":
+            configure()
+        elif sys.argv[1] == "--help":
+            print("Usage: reddit [command]")
+            print("  scan <subs>   - Scan subreddits")
+            print("  config       - Configure")
+            print("  server       - Start HTTP server")
+        else:
+            interactive()
     else:
         interactive()
 

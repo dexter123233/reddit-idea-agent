@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reddit Idea Agent - Single command startup
+# Reddit Idea Agent - Full implementation with integrations
 # Run: bash <(curl -sSL https://raw.githubusercontent.com/dexter123233/reddit-idea-agent/main/reddit-agent/install.sh)
 
 set -e
@@ -13,10 +13,10 @@ cd "$TMP_DIR/reddit-agent"
 
 echo ""
 echo "========================================"
-echo "Reddit Idea Agent"
+echo "Reddit Idea Agent - Full Integrations"
 echo "========================================"
 echo ""
-echo "Starting in TUI mode..."
+echo "Starting TUI..."
 echo ""
 
 exec python3 reddit
